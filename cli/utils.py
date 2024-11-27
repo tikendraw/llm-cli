@@ -1,8 +1,8 @@
+import json
 import sqlite3
 import uuid
 from datetime import datetime
 from typing import Any
-import json
 
 from core.config import history_db
 
