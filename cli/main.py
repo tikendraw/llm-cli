@@ -1,4 +1,5 @@
 import os
+import uuid
 from dataclasses import asdict, fields
 
 import click
@@ -91,7 +92,8 @@ def show_messages(messages: list[dict], console: Console) -> None:
 @click.option('--no_system_prompt', is_flag=True, help='Disable system prompt')
 @click.option('--skip_vision_check', is_flag=True, help='Skip vision model check')
 @click.option('--session_id', type=int, help='Session ID to continue')
-def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_check, session_id):
+@click.option('--title', '-t', default="Untitled Session", help='Title/description for the session')
+def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_check, session_id, title):
     """Interactive chat interface with markdown rendering and image support."""
     console.print("[cyan]Welcome to ChatUI![/cyan]")
     console.print("[cyan]Type '/exit' to quit, '/clear' to reset conversation, '/help' for help, or '/image <path>' to add an image.[/cyan]\n")
@@ -103,12 +105,16 @@ def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_chec
         messages.append({"role": "system", "content": system_prompt})
 
     if session_id:
-        session = get_chat_history(session_id)
-        if session:
-            messages = eval(session[2])  # Load chat history
-            console.print(f"[green]Continuing session {session_id} from {session[1]}[/green]")
-        else:
-            console.print(f"[red]Session ID {session_id} not found. Starting a new session.[/red]")
+            session = get_chat_history(session_id)
+            if session:
+                session_id, start_time, session_title, chat_history = session
+                messages = eval(chat_history)  # Load chat history
+                console.print(f"[green]Continuing session '{session_title}' (ID: {session_id}) from {start_time}[/green]")
+            else:
+                console.print(f"[red]Session ID {session_id} not found. Starting a new session.[/red]")
+    else:
+        session_id = None
+
 
     show_messages(messages, console)
 
@@ -116,7 +122,7 @@ def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_chec
         user_input = click.prompt(click.style("You 👦", fg="blue"), default="", show_default=False).strip()
 
         if user_input.lower() in {"/exit", "/quit"}:
-            session_id = save_chat_history(str(messages))
+            session_id = save_chat_history(messages, session_id=session_id, title=title)
             console.print(f"[cyan]Session saved with ID {session_id}. Goodbye![/cyan]")
             break
         elif user_input.lower() == "/clear":
@@ -166,16 +172,18 @@ def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_chec
 def history():
     """List all saved chat sessions."""
     sessions = get_chat_history()
-    console.print("[cyan]Chat History:[/cyan]")
+    console.print("[cyan]Chat History:[/cyan]\n")
     if sessions:
         for session in sessions:
-            session_id, start_time, length = session
+            session_id, start_time, title, length = session
             console.print(f"[yellow]Session ID:[/yellow] {session_id}\n"
-                          f"[yellow]Start Time:[/yellow] {start_time}\n",
-                          f"[yellow]Length:[/yellow] {length} chars")
+                          f"[yellow]Start Time:[/yellow] {start_time}\n"
+                          f"[yellow]Title:[/yellow] {title}\n"
+                          f"[yellow]Length:[/yellow] {length} turns\n")
     else:
         console.print("[red]No chat history found.[/red]")
-
+        
+        
 @cli.command()
 @click.argument('key', required=False, default=None)
 @click.argument('value', required=False, default=None)
