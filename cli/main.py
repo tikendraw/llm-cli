@@ -1,5 +1,5 @@
+import os
 from dataclasses import asdict, fields
-from unittest import skip
 
 import click
 from rich.console import Console
@@ -64,10 +64,8 @@ def chatui(model, system_prompt, temperature):
     console.print("[cyan]Chat session started! Type '/exit' to quit. Type '/help' for commands.[/cyan]\n")
     
     while True:
-        # Get user input
         user_input = click.prompt(click.style("You 👦", fg='blue'), default="", show_default=False)
         
-        # Match for special commands
         match user_input.lower():
             case "/exit" | "/quit":
                 console.print("[cyan]Ending chat session. Goodbye![/cyan]")
@@ -84,29 +82,108 @@ def chatui(model, system_prompt, temperature):
                 continue
 
             case _:
-                # Handle regular messages
                 pass
 
-        # Add user message to history
         messages.append({"role": "user", "content": user_input})
         
-        # Get LLM response
         response = cc(model=model, messages=messages, temperature=temperature)
         llm_message = response.choices[0].message['content']
         messages.append({"role": "assistant", "content": llm_message})
         
-        # Display the LLM response
         console.print("[green]LLM 🤖:[/green]")
         try:
-            # Try rendering as Markdown
             md = Markdown(llm_message)
             console.print(md)
         except Exception:
-            # Fallback to plain text if markdown rendering fails
             console.print(llm_message)
-        console.print("\n")  # Add spacing between exchanges
+        console.print("\n")
 
+@cli.command()
+@click.option('--system_prompt', '-s', default=sys_p, type=str, help='System prompt to the LLM')
+@click.option('--model', '-m', default=configg.model, help='Model name, e.g., provider/model_name')
+@click.option('--temperature', '-t', default=configg.temperature, help='Temperature for the LLM')
+@click.option('--no_system_prompt', is_flag=True, help='Disable system prompt')
+@click.option('--skip_vision_check', is_flag=True, help='Skip vision model check')
+def chatui2(system_prompt, model, temperature, no_system_prompt, skip_vision_check):
+    """Interactive chat interface with markdown rendering and image support."""
+    from rich.console import Console
+    from rich.markdown import Markdown
+    import os
 
+    console = Console()
+    messages = []
+    pending_image = None  # To store the image path temporarily
+
+    # Add system prompt if not disabled
+    if system_prompt and not no_system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    # Welcome message
+    console.print("[cyan]Welcome to ChatUI2![/cyan]")
+    console.print("[cyan]Type '/exit' to quit, '/clear' to reset conversation, '/help' for help, or '/image <path>' to add an image.[/cyan]\n")
+
+    while True:
+        # Prompt user for input
+        user_input = click.prompt(click.style("You 👦", fg='blue'), default="", show_default=False).strip()
+
+        # Handle special commands
+        match user_input.lower():
+            case "/exit" | "/quit":
+                console.print("[cyan]Exiting ChatUI. Goodbye![/cyan]")
+                break
+            case "/help":
+                console.print("[yellow]Available commands:[/yellow]\n"
+                              "[bold yellow]/help[/bold yellow] - Show help message\n"
+                              "[bold yellow]/exit or /quit[/bold yellow] - Exit the chat\n"
+                              "[bold yellow]/clear[/bold yellow] - Reset conversation history\n"
+                              "[bold yellow]/image <path>[/bold yellow] - Add an image to the conversation\n"
+                              "[yellow]Type a message to chat or use the commands above.[/yellow]\n")
+                continue
+            case "/clear":
+                messages = [{"role": "system", "content": system_prompt}] if not no_system_prompt else []
+                pending_image = None  # Reset image state
+                console.print("[yellow]Conversation history cleared.[/yellow]\n")
+                continue
+
+        # Handle image command
+        if user_input.startswith("/image"):
+            try:
+                _, image_path = user_input.split(maxsplit=1)
+                if not os.path.exists(image_path):
+                    console.print(f"[red]Image file '{image_path}' not found! Please check the path and try again.[/red]")
+                    continue
+
+                if is_vision_llm(model) or skip_vision_check:
+                    pending_image = image_path
+                    console.print(f"[green]Image '{image_path}' added. Enter a message with the image.[/green]")
+                else:
+                    console.print(f"[red]{model} is not a vision model (according to litellm).[/red]")
+                    pending_image = None
+            except ValueError:
+                console.print("[red]Please provide a valid image path using '/image <path>'.[/red]")
+            continue
+
+        if pending_image:
+            content = parse_image(image=pending_image, message=user_input)
+            messages.append({"role": "user", "content": content})
+            pending_image = None  # Reset the pending image state
+        else:
+            messages.append({"role": "user", "content": user_input})
+
+        # Get LLM response
+        response = cc(model=model, messages=messages, temperature=temperature)
+        llm_message = response.choices[0].message['content']
+        messages.append({"role": "assistant", "content": llm_message})
+
+        # Display LLM response
+        console.print("[green]LLM 🤖:[/green]")
+        try:
+            md = Markdown(llm_message)
+            console.print(md)
+        except Exception:
+            console.print(llm_message)
+
+        console.print("\n")  
 
 @cli.command()
 @click.argument('key', required=False, default=None)
@@ -160,6 +237,6 @@ def config(key: str, value: str):
 if __name__ == "__main__":
     cli.add_command(chat)
     cli.add_command(chatui)
-    cli.add_command(chatui)
+    cli.add_command(chatui2)
     cli.add_command(config)
     cli()
