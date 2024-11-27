@@ -8,6 +8,7 @@ config_dir = Path(config_dir)
 config_dir.mkdir(parents=True, exist_ok=True)
 
 config_file = config_dir/'config.json'
+history_db = config_dir/'chat_history.db'
 
 
 
