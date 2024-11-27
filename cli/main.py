@@ -8,7 +8,7 @@ from rich.markdown import Markdown
 
 from cli.utils import get_chat_history, init_db, save_chat_history
 from core.chat import chat as cc
-from core.chat import is_vision_llm, parse_image
+from core.chat import is_vision_llm, parse_image, unparse_image
 from core.config import ChatConfig, load_config, save_config
 from core.prompt import system_prompt as sp
 from core.prompt import system_prompt_cot
@@ -72,6 +72,11 @@ def show_messages(messages: list[dict], console: Console) -> None:
     for message in messages:
         role = message['role']
         content = message['content']
+        image_path = None
+        if isinstance(content, list):
+            content, image_path = unparse_image(content)
+
+
 
         if role == 'user':
             console.print("[blue]You 👦:[/blue]")
@@ -82,6 +87,8 @@ def show_messages(messages: list[dict], console: Console) -> None:
         else:
             console.print("[yellow]Unknown Role:[/yellow]")
 
+        if image_path:
+            console.print(f'[yellow]Image is saved here: file:///{image_path}[/yellow]')
         print_markdown(content)
 
 
@@ -91,7 +98,7 @@ def show_messages(messages: list[dict], console: Console) -> None:
 @click.option('--temperature', '-t', default=configg.temperature, help='Temperature for the LLM')
 @click.option('--no_system_prompt', is_flag=True, help='Disable system prompt')
 @click.option('--skip_vision_check', is_flag=True, help='Skip vision model check')
-@click.option('--session_id', type=int, help='Session ID to continue')
+@click.option('--session_id', type=str, default=None, help='Session ID to continue')
 @click.option('--title', '-t', default="Untitled Session", help='Title/description for the session')
 def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_check, session_id, title):
     """Interactive chat interface with markdown rendering and image support."""
@@ -108,7 +115,7 @@ def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_chec
             session = get_chat_history(session_id)
             if session:
                 session_id, start_time, session_title, chat_history = session
-                messages = eval(chat_history)  # Load chat history
+                messages = chat_history
                 console.print(f"[green]Continuing session '{session_title}' (ID: {session_id}) from {start_time}[/green]")
             else:
                 console.print(f"[red]Session ID {session_id} not found. Starting a new session.[/red]")
