@@ -3,6 +3,7 @@
 # files
 ape1.jpg
 tamm4.jpg
+*.jpg
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
