@@ -1,8 +1,15 @@
 import base64
+import os
+import random
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import litellm
 from litellm import completion
+from pydantic_core.core_schema import tuple_positional_schema
+
+from .config import config_dir
 
 
 def chat(*args, **kwargs):
@@ -24,7 +31,7 @@ def encode_image(image_path: str |Path) -> str:
 def is_url(path:Path)->bool:
     return path.as_posix().startswith("http")
 
-def parse_image(image:str|Path, message:str=None)->list:
+def parse_image(image:str|Path, message:str=None)->list[dict]:
     if isinstance(image, str):
         image = Path(image)
 
@@ -54,3 +61,41 @@ def parse_image(image:str|Path, message:str=None)->list:
         
     return message_part
     
+
+
+def random_name() -> str:
+    return f"{datetime.now().strftime('%Y%m%d-%H%M%S.%f')}-{random.randint(100000000, 9999999999)}"
+
+def unparse_image(message: List[Dict], config_dir: str = config_dir/'attached_images') -> Tuple[str, str]:
+    """
+    Get user message and image file path from a parsed message.
+    
+    Args:
+        message (list[dict]): Parsed message containing text and/or image data.
+        config_dir (str): Directory to save decoded images.
+        
+    Returns:
+        Tuple[str, str]: A tuple containing the user message and the saved image file path.
+    """
+    user_message = None
+    image_path = None
+
+    # Ensure config_dir exists
+    os.makedirs(config_dir, exist_ok=True)
+
+    for part in message:
+        if part["type"] == "text":
+            user_message = part["text"]
+        elif part["type"] == "image_url":
+            image_data = part["image_url"]["url"]
+            if image_data.startswith("data:image/jpeg;base64,"):
+                # Decode base64 image and save it
+                image_data = image_data.split(",", 1)[1]  # Remove the `data:image/jpeg;base64,` prefix
+                decoded_image = base64.b64decode(image_data)
+                image_path = Path(config_dir) / f"{random_name()}.jpg"
+                with open(image_path, "wb") as f:
+                    f.write(decoded_image)
+            else:
+                image_path = image_data
+
+    return user_message, str(image_path) if image_path else None
