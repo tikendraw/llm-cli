@@ -1,16 +1,14 @@
 import os
-import uuid
 from dataclasses import asdict, fields
 
 import click
 from rich.console import Console
 from rich.markdown import Markdown
 
-from cli.utils import get_chat_history, init_db, save_chat_history
+from cli.utils import delete_chat_session, get_chat_history, init_db, save_chat_history
 from core.chat import chat as cc
 from core.chat import is_vision_llm, parse_image, unparse_image
 from core.config import ChatConfig, load_config, save_config
-from core.prompt import system_prompt as sp
 from core.prompt import system_prompt_cot
 
 sys_p = system_prompt_cot
@@ -67,10 +65,14 @@ def print_markdown(message: str) -> None:
     console.print("\n")
 
 
-def show_messages(messages: list[dict], console: Console) -> None:
+def show_messages(messages: list[dict], console: Console, show_system_prompt: bool = False) -> None:
     """Display chat messages in the console."""
     for message in messages:
         role = message['role']
+        
+        if role == 'system' and not show_system_prompt:
+            continue
+
         content = message['content']
         image_path = None
         if isinstance(content, list):
@@ -95,9 +97,9 @@ def show_messages(messages: list[dict], console: Console) -> None:
 @cli.command()
 @click.option('--system_prompt', '-s', default=sys_p, type=str, help='System prompt to the LLM')
 @click.option('--model', '-m', default=configg.model, help='Model name, e.g., provider/model_name')
-@click.option('--temperature', '-t', default=configg.temperature, help='Temperature for the LLM')
+@click.option('--temperature', '-t', default=configg.temperature, help=f'Temperature for the LLM, defaults to {configg.temperature}')
 @click.option('--no_system_prompt', is_flag=True, help='Disable system prompt')
-@click.option('--skip_vision_check', is_flag=True, help='Skip vision model check')
+@click.option('--skip_vision_check', is_flag=True, help="Skip vision model check, (useful when litellm doesn't see the model as vision model)")
 @click.option('--session_id', type=str, default=None, help='Session ID to continue')
 @click.option('--title', '-t', default="Untitled Session", help='Title/description for the session')
 def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_check, session_id, title):
@@ -175,9 +177,18 @@ def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_chec
         show_messages([{"role": "assistant", "content": llm_message}], console)
 
 
+
+
 @cli.command()
-def history():
+@click.option('--delete_session', type=str, required=False, default=None, help='Session ID to delete, or "all" to delete all sessions.')
+def history(delete_session):
     """List all saved chat sessions."""
+    
+    if delete_session:
+        delete_chat_session(delete_session)
+        console.print(f"[green]Session {delete_session} deleted.[/green]")
+        return
+        
     sessions = get_chat_history()
     console.print("[cyan]Chat History:[/cyan]\n")
     if sessions:
