@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "llm-cli"
+name = "llm-to-cli"
 version = "0.1.0"
 description = ""
 authors = ["tikendraw <tikendraksahu1029@gmail.com>"]
