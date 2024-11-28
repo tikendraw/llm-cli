@@ -32,7 +32,7 @@ def save_chat_history(history: list[dict], session_id: str = None, title: str = 
         cursor.execute("""
             INSERT OR REPLACE INTO sessions (id, start_time, title, chat_history) 
             VALUES (?, ?, ?, ?)
-        """, (session_id, datetime.now().isoformat(), title, json.dumps(history)))  # Save history as JSON
+        """, (session_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), title, json.dumps(history)))  # Save history as JSON
         conn.commit()
         return session_id
 
@@ -54,10 +54,18 @@ def get_chat_history(session_id: str = None):
 
 def delete_chat_session(session_id:str=None):
     """Delete a chat session by ID."""
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-        conn.commit()
     
+    if session_id.strip() == 'all':
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sessions")
+            conn.commit()
+        
+    else:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            conn.commit()
+        
     return
     
