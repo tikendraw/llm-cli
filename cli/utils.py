@@ -50,3 +50,14 @@ def get_chat_history(session_id: str = None):
             cursor.execute("SELECT id, start_time, title, chat_history FROM sessions")
             rows = cursor.fetchall()
             return [(row[0], row[1], row[2], len(json.loads(row[3]))) for row in rows]
+
+
+def delete_chat_session(session_id:str=None):
+    """Delete a chat session by ID."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        conn.commit()
+    
+    return
+    
