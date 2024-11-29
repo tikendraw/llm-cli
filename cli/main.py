@@ -1,23 +1,31 @@
 import os
 import sys
 from dataclasses import asdict, fields
+from typing import Dict, List, Optional
 
 import click
 from rich.console import Console
 
-from cli.utils import (
+from cli.db_utils import (
     delete_chat_session,
     get_chat_history,
     init_db,
     save_chat_history,
+)
+from cli.utils import (
+    filter_command,
+    get_context_from_file,
+    get_message_or_stdin,
+    handle_image_command,
+    prepare_messages,
+    reset_conversation,
     show_messages,
 )
 from core.chat import chat as cc
-from core.chat import is_vision_llm, parse_image
+from core.chat import parse_image
 from core.config import ChatConfig, load_config, save_config
-from core.prompt import system_prompt_cot
+from core.prompt import get_formatter, get_prompt
 
-sys_p = system_prompt_cot
 console = Console()
 configg = load_config()
 
@@ -32,129 +40,126 @@ def cli():
 
 @cli.command()
 @click.argument('message', type=str, required=False)
-@click.option('--system_prompt', '-s', default=sys_p, type=str, help='system prompt to the llm')
-@click.option('--model', '-m', default=configg.model, help='model name e.g.: provider/model_name')
-@click.option('--temperature', '-t', default=configg.temperature, help='float value between 0 and 1, lower value means more deterministic, higher value means more creative')
-@click.option('--image', type=click.Path(exists=True), default=None, help='file path or url to an image')
-@click.option('--no_system_prompt', is_flag=True, help='disable system prompt')
-@click.option('--skip_vision_check', is_flag=True, help='skip vision check')
-def chat(model, message, temperature, system_prompt, image, no_system_prompt, skip_vision_check):
-
+@click.option('--system_prompt', '-s', default=None, help='System prompt for the LLM.')
+@click.option('--model', '-m', default=configg.model, help='Model name, e.g., provider/model_name.')
+@click.option('--temperature', '-t', default=configg.temperature, help='LLM temperature (0-1).')
+@click.option('--image', type=click.Path(exists=True), default=None, help='Image file path or URL.')
+@click.option('--context', '-c', type=str, default=None, help='Context string or file path.')
+@click.option('--no_system_prompt', is_flag=True, help='Disable system prompt.')
+@click.option('--skip_vision_check', is_flag=True, help='Skip vision model check.')
+def chat(message, system_prompt, model, temperature, image, context, no_system_prompt, skip_vision_check):
+    """CLI-based chat interaction."""
+    message = get_message_or_stdin(message)
     if not message:
-        if not sys.stdin.isatty():
-            message = sys.stdin.read().strip()
-        else:
-            console.print("[red]No message provided. Provide a message or pipe input.[/red]")
-            return
-        
-    messages = []
-    if system_prompt and not no_system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-        
-    if image:
-        if is_vision_llm(model) or skip_vision_check:
-            content = parse_image(image=image, message=message)
-            messages.append({'role' : 'user', 'content' : content})
-        else:
-            console.print(f'[red]{model} is not a vision model(according to litellm).[/red]')
-            return
-    else:            
-        messages.append({"role": "user", "content": message})
-    
-    # print('model: ', model)
-    # print(f'gave this: {messages}')
-    
-    response = cc(model=model, messages=messages, temperature=temperature)
-    click.secho(response.choices[0].message['content'], fg='green')
-    
+        console.print("[red]No message provided. Provide a message or pipe input.[/red]")
+        return
+
+    if context:
+        context = get_context_from_file(context) or context
+        message = get_formatter('rag').format(question=message, context=context)
+        system_prompt = get_prompt('rag') if not no_system_prompt else None
+
+    try:
+        messages = prepare_messages(message, system_prompt, image, model, context, no_system_prompt, skip_vision_check)
+        response = cc(model=model, messages=messages, temperature=temperature)
+        click.secho(response.choices[0].message['content'], fg='green')
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
 
 @cli.command()
-@click.option('--system_prompt', '-s', default=sys_p, type=str, help='System prompt to the LLM')
-@click.option('--model', '-m', default=configg.model, help='Model name, e.g., provider/model_name')
-@click.option('--temperature', '-t', default=configg.temperature, help=f'Temperature for the LLM, defaults to {configg.temperature}')
-@click.option('--no_system_prompt', is_flag=True, help='Disable system prompt')
-@click.option('--skip_vision_check', is_flag=True, help="Skip vision model check, (useful when litellm doesn't see the model as vision model)")
-@click.option('--session_id', type=str, default=None, help='Session ID to continue')
-@click.option('--title', '-t', default="Untitled Session", help='Title/description for the session')
-def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_check, session_id, title):
-    """Interactive chat interface with markdown rendering and image support."""
-    console.print("[cyan]Welcome to ChatUI![/cyan]")
-    console.print("[cyan]Type '/exit' to quit, '/clear' to reset conversation, '/help' for help, or '/image <path>' to add an image.[/cyan]\n")
+@click.option('--system_prompt', '-sp', default=None, help='System prompt for the LLM.')
+@click.option('--model', '-m', default=configg.model, help='Model name, e.g., provider/model_name.')
+@click.option('--temperature', '-t', default=configg.temperature, help='LLM temperature (0-1).')
+@click.option('--no_system_prompt', '-nsp', is_flag=True, help='Disable system prompt.')
+@click.option('--context', '-c', type=str, default=None, help='Context string or file path.')
+@click.option('--skip_vision_check', '-svc', is_flag=True, help='Skip vision model check.')
+@click.option('--session_id', '-s', type=str, default=None, help='Session ID for resuming a chat.')
+@click.option('--title', '-t', default="Untitled Session", help='Title for the chat session.')
+def chatui(system_prompt, model, temperature, no_system_prompt, skip_vision_check, context, session_id, title):
+    """Interactive chat interface with Markdown, RAG, and image support."""
+    console.print("[cyan]Welcome to ChatUI! Type '/help' for commands.[/cyan]")
 
-    def reset_conversation():
-        return [{"role": "system", "content": system_prompt}] if not no_system_prompt else []
+    if context:
+        raw_context = get_context_from_file(context) or context
+        system_prompt = get_prompt("rag") if not no_system_prompt else None
+        console.print("[green]Context loaded.[/green]")
+    else:
+        raw_context = None
 
-    messages = reset_conversation()
+    # Reset or load conversation
+    messages = reset_conversation(system_prompt, no_system_prompt)
     pending_image = None
 
-
     if session_id:
-            session = get_chat_history(session_id)
-            if session:
-                session_id, start_time, session_title, chat_history = session
-                messages = chat_history
-                console.print(f"[green]Continuing session '{session_title}' (ID: {session_id}) from {start_time}[/green]")
-            else:
-                console.print(f"[red]Session ID {session_id} not found. Starting a new session.[/red]")
+        session = get_chat_history(session_id)
+        if session:
+            session_id, start_time, title, chat_history = session
+            messages = chat_history
+            console.print(f"[green]Resumed session '{title}' (ID: {session_id}) from {start_time}, had {len(messages)} turns.[/green]")
+        else:
+            session_id = None # not exists in db, none will generate random one
+            console.print(f"[red]Session ID {session_id} not found. Starting a new session.[/red]")
 
-
+    # Display initial messages
     show_messages(messages, console)
 
     try:
         while True:
             user_input = click.prompt(click.style("You 👦", fg="blue"), default="", show_default=False).strip()
-
-            if user_input.lower() in {"/exit", "/quit"}:
-                console.print(f"[cyan]Session saved with ID {session_id}. Goodbye![/cyan]")
-                break
-            elif user_input.lower() == "/clear":
-                messages = reset_conversation()
-                pending_image = None
-                console.print("[yellow]Conversation history cleared.[/yellow]\n")
-                continue
-            elif user_input.lower() == "/help":
-                console.print("[yellow]Available commands:[/yellow]\n"
-                            "[bold yellow]/help[/bold yellow] - Show help message\n"
-                            "[bold yellow]/exit or /quit[/bold yellow] - Exit the chat\n"
-                            "[bold yellow]/clear[/bold yellow] - Reset conversation history\n"
-                            "[bold yellow]/image <path>[/bold yellow] - Add an image to the conversation\n")
+            if not user_input:
                 continue
 
-            if user_input.startswith("/image"):
-                try:
-                    _, image_path = user_input.split(maxsplit=1)
-                    image_path = os.path.abspath(image_path)
+            command = filter_command(user_input)
+            match command.lower():
+                case "/exit"| "/quit":
+                    break
+                case "/clear":
+                    messages = reset_conversation(system_prompt, no_system_prompt)
+                    pending_image = None
+                    console.print("[yellow]Conversation history cleared.[/yellow]")
+                    continue
+                case "/clear_context":
+                    raw_context=None
+                    console.print("[yellow]Context cleared![/yellow]")
+                    continue
+                case "/help":
+                    console.print("[yellow]Commands: /exit, /quit, /clear, /help, /image <path>.[/yellow]")
+                    continue
+                case "/image":
+                    pending_image = handle_image_command(user_input, model, skip_vision_check, console)
+                    console.print("Image attached. Add a message") if pending_image else None
+                    continue
+                case _:
+                    pass
 
-                    if not os.path.exists(image_path):
-                        console.print(f"[red]Image file '{image_path}' not found![/red]")
-                        continue
-                    if is_vision_llm(model) or skip_vision_check:
-                        pending_image = image_path
-                        console.print(f"[green]Image '{image_path}' added. Enter a message with the image.[/green]")
-                    else:
-                        console.print(f"[red]{model} is not a vision model.[/red]")
-                        pending_image = None
-                except ValueError:
-                    console.print("[red]Please provide a valid image path using '/image <path>'.[/red]")
-                continue
+            # Use context if available for RAG
+            if raw_context:
+                formatted_message = get_formatter('rag').format(question=user_input, context=raw_context)
+            else:
+                formatted_message = user_input
 
+            # Add user input or image + message to the conversation
             if pending_image:
-                content = parse_image(image=pending_image, message=user_input)
+                content = parse_image(image=pending_image, message=formatted_message)
                 messages.append({"role": "user", "content": content})
                 pending_image = None
             else:
-                messages.append({"role": "user", "content": user_input})
+                messages.append({"role": "user", "content": formatted_message})
 
+            # Send messages to LLM and handle the response
             try:
                 response = cc(model=model, messages=messages, temperature=temperature)
-                llm_message = response.choices[0].message["content"]
-                messages.append({"role": "assistant", "content": llm_message})
-                show_messages([{"role": "assistant", "content": llm_message}], console)
+                assistant_message = response.choices[0].message["content"]
+                messages.append({"role": "assistant", "content": assistant_message})
+                show_messages([{"role": "assistant", "content": assistant_message}], console)
             except Exception as e:
                 console.print(f"[red]Error generating response: {e}[/red]")
-    
     finally:
-        save_chat_history(messages, session_id=session_id, title=title)        
+        session_id=save_chat_history(messages, session_id=session_id, title=title)        
+        console.print(f"[cyan]Session saved with ID {session_id} Goodbye![/cyan]")
+
 
 
 @cli.command()
