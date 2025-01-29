@@ -1,4 +1,3 @@
-
 import os
 import sys
 from pathlib import Path
@@ -51,11 +50,13 @@ def show_messages(messages: list[dict], console: Console, show_system_prompt: bo
         print_markdown(content, console)
 
 
-def get_message_or_stdin(message:str) -> str:
-    """Get Message or stdin"""
+def get_message_or_stdin(message: str, file: Optional[str] = None) -> str:
+    """Get message from arguments, stdin pipe, or file."""
+    if file:
+        return get_input_from_file(file)
     if not message:
-        if not sys.stdin.isatty():
-            message = sys.stdin.read().strip()
+        if not sys.stdin.isatty():  # This handles both pipe (|) and redirection (<)
+            return sys.stdin.read().strip()
     return message
 
 
@@ -109,3 +110,11 @@ def filter_command(x:str)->Optional[str]:
     if x:
         return x[0]
     return
+
+def get_input_from_file(file_path: str) -> Optional[str]:
+    """Read content from a file."""
+    try:
+        with open(file_path, 'r') as f:
+            return f.read().strip()
+    except Exception as e:
+        raise click.UsageError(f"Failed to read file: {e}")
