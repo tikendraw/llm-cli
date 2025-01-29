@@ -1,3 +1,7 @@
+import warnings
+
+warnings.simplefilter("ignore", UserWarning)
+
 import re
 from dataclasses import asdict, fields
 
