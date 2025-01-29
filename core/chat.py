@@ -7,7 +7,6 @@ from typing import Dict, List, Tuple
 
 import litellm
 from litellm import completion
-from pydantic_core.core_schema import tuple_positional_schema
 
 from .config import config_dir
 
