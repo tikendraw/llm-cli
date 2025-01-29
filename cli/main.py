@@ -2,6 +2,7 @@ import os
 import sys
 from dataclasses import asdict, fields
 from typing import Dict, List, Optional
+import re
 
 import click
 from rich.console import Console
@@ -31,8 +32,17 @@ configg = load_config()
 
 init_db()
 
+def get_version():
+    try:
+        with open("pyproject.toml", "r") as f:
+            content = f.read()
+            version_match = re.search(r'version\s*=\s*"([^"]+)"', content)
+            return version_match.group(1) if version_match else "unknown"
+    except FileNotFoundError:
+        return "unknown"
 
 @click.group
+@click.version_option(version=get_version(), prog_name="llm-cli")
 def cli():
     """ llm-cli application """
     pass
@@ -40,6 +50,7 @@ def cli():
 
 @cli.command()
 @click.argument('message', type=str, required=False)
+@click.option('--file', '-f', type=str, help='Read message from file')
 @click.option('--system_prompt', '-s', default=None, help='System prompt for the LLM.')
 @click.option('--model', '-m', default=configg.model, help='Model name, e.g., provider/model_name.')
 @click.option('--temperature', '-t', default=configg.temperature, help='LLM temperature (0-1).')
@@ -47,11 +58,11 @@ def cli():
 @click.option('--context', '-c', type=str, default=None, help='Context string or file path.')
 @click.option('--no_system_prompt', is_flag=True, help='Disable system prompt.')
 @click.option('--skip_vision_check', is_flag=True, help='Skip vision model check.')
-def chat(message, system_prompt, model, temperature, image, context, no_system_prompt, skip_vision_check):
-    """CLI-based chat interaction."""
-    message = get_message_or_stdin(message)
+def chat(message, file, system_prompt, model, temperature, image, context, no_system_prompt, skip_vision_check):
+    """CLI-based chat interaction. Accept input from arguments, pipe, or file."""
+    message = get_message_or_stdin(message, file)
     if not message:
-        console.print("[red]No message provided. Provide a message or pipe input.[/red]")
+        console.print("[red]No message provided. Provide a message, pipe input, or specify a file.[/red]")
         return
 
     if context:
