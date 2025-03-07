@@ -1,38 +1,13 @@
-import warnings
-
-warnings.simplefilter("ignore", UserWarning)
-
 import re
-from dataclasses import asdict, fields
+import warnings
 
 import click
 from rich.console import Console
 
-from cli.db_utils import (
-    delete_chat_session,
-    get_chat_history,
-    init_db,
-    save_chat_history,
-)
-from cli.utils import (
-    filter_command,
-    get_context_from_file,
-    get_message_or_stdin,
-    handle_image_command,
-    prepare_messages,
-    reset_conversation,
-    show_messages,
-)
-from core.chat import chat as cc
-from core.chat import parse_image
-from core.config import ChatConfig, load_config, save_config
-from core.prompt import get_formatter, get_prompt
+from cli.lazy_imports import get_config
 
+warnings.simplefilter("ignore", UserWarning)
 console = Console()
-configg = load_config()
-
-init_db()
-
 
 def get_version():
     try:
@@ -51,7 +26,6 @@ def cli():
     pass
 
 
-# Modify the chat function with profiler
 @cli.command()
 @click.argument("message", type=str, required=False)
 @click.option("--file", "-f", type=str, help="Read message from file")
@@ -59,11 +33,11 @@ def cli():
 @click.option(
     "--model",
     "-m",
-    default=configg.model,
+    default=None,
     help="Model name, e.g., provider/model_name.",
 )
 @click.option(
-    "--temperature", "-t", default=configg.temperature, help="LLM temperature (0-1)."
+    "--temperature", "-t", default=None, help="LLM temperature (0-1)."
 )
 @click.option(
     "--image",
@@ -88,6 +62,18 @@ def chat(
     skip_vision_check,
 ):
     """CLI-based chat interaction. Accept input from arguments, pipe, or file."""
+    from cli.utils import (
+        get_context_from_file,
+        get_message_or_stdin,
+        prepare_messages,
+    )
+    from core.chat import chat as cc
+    from core.prompt import get_formatter, get_prompt
+
+    config = get_config()
+    model = model or config.model
+    temperature = temperature if temperature is not None else config.temperature
+
     message = get_message_or_stdin(message, file)
     if not message:
         console.print(
@@ -116,17 +102,16 @@ def chat(
         console.print(f"[red]Error: {e}[/red]")
 
 
-# Modify the chatui function with profiler
 @cli.command()
 @click.option("--system_prompt", "-sp", default=None, help="System prompt for the LLM.")
 @click.option(
     "--model",
     "-m",
-    default=configg.model,
+    default=None,
     help="Model name, e.g., provider/model_name.",
 )
 @click.option(
-    "--temperature", "-t", default=configg.temperature, help="LLM temperature (0-1)."
+    "--temperature", "-t", default=None, help="LLM temperature (0-1)."
 )
 @click.option("--no_system_prompt", "-nsp", is_flag=True, help="Disable system prompt.")
 @click.option(
@@ -152,6 +137,24 @@ def chatui(
     title,
 ):
     """Interactive chat interface with Markdown, RAG, and image support."""
+    from cli.db_utils import get_chat_history, init_db, save_chat_history
+    from cli.utils import (
+        filter_command,
+        get_context_from_file,
+        handle_image_command,
+        reset_conversation,
+        show_messages,
+    )
+    from core.chat import chat as cc
+    from core.chat import parse_image
+    from core.prompt import get_formatter, get_prompt
+
+    config = get_config()
+    model = model or config.model
+    temperature = temperature if temperature is not None else config.temperature
+    
+    init_db()  # Initialize DB only when chatui is used
+
     console.print("[cyan]Welcome to ChatUI! Type '/help' for commands.[/cyan]")
 
     if context:
@@ -262,6 +265,9 @@ def chatui(
 )
 def history(delete_session):
     """List all saved chat sessions."""
+    from cli.db_utils import delete_chat_session, get_chat_history, init_db
+
+    init_db()  # Initialize DB only when history is used
 
     if delete_session:
         delete_chat_session(delete_session)
@@ -292,6 +298,10 @@ def config(key: str, value: str):
     Without arguments, displays the current configuration.
     To update, provide a key and a value.
     """
+    from dataclasses import asdict, fields
+
+    from core.config import ChatConfig, load_config, save_config
+
     current_config = load_config()
     config_dict = asdict(current_config)
 
@@ -335,8 +345,4 @@ def config(key: str, value: str):
 
 
 if __name__ == "__main__":
-    cli.add_command(chat)
-    cli.add_command(chatui)
-    cli.add_command(config)
-    cli.add_command(history)
     cli()
