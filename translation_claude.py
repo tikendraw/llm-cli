@@ -5,7 +5,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
-
+from chunking_strategies import ChunkingStrategy, SizeBasedChunkStrategy, TimedChunkStrategy
 from groq import Groq
 from groq.types.audio import Transcription, Translation
 from pydub import AudioSegment
@@ -53,15 +53,24 @@ class AudioProcessor:
         'distil-whisper-large-v3-en'
     ]
     
-    def __init__(self, groq_api_key: Optional[str] = None) -> None:
+    def __init__(
+        self, 
+        groq_api_key: Optional[str] = None,
+        chunking_strategy: Optional[ChunkingStrategy] = None
+    ) -> None:
         """
         Initialize the AudioProcessor with the Groq API client.
         
         Args:
             groq_api_key: Optional API key for Groq. If not provided, will use GROQ_API_KEY environment variable.
+            chunking_strategy: Strategy to use for chunking audio files. Defaults to SizeBasedChunkStrategy.
         """
         self.client = Groq(api_key=groq_api_key)
-        
+        self.chunking_strategy = chunking_strategy or SizeBasedChunkStrategy(
+            max_size_bytes=self.MAX_FILE_SIZE,
+            overlap_ms=self.OVERLAP_DURATION
+        )
+
     def preprocess_audio(self, file_path: str, output_path: Optional[str] = None) -> str:
         """
         Preprocess audio file to optimize for speech recognition:
@@ -110,11 +119,7 @@ class AudioProcessor:
     
     def chunk_audio(self, file_path: str, temp_dir: Optional[str] = None) -> List[str]:
         """
-        Smart chunking strategy for large audio files:
-        1. Start with a large chunk size (e.g., 10 minutes)
-        2. Check if chunk size exceeds 25MB limit
-        3. If it does, reduce chunk size and try again
-        4. Create chunks with overlap to ensure continuous transcription
+        Chunk audio file using the configured strategy
         
         Args:
             file_path: Path to the audio file
@@ -129,64 +134,7 @@ class AudioProcessor:
             os.makedirs(temp_dir, exist_ok=True)
             
         audio = AudioSegment.from_file(file_path)
-        total_duration = len(audio)
-        
-        # Initial chunk size (start with 10 minutes)
-        chunk_size_ms = 10 * 60 * 1000  
-        
-        # Find optimal chunk size
-        while True:
-            # Create a test chunk to check size
-            test_chunk = audio[:min(chunk_size_ms, total_duration)]
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-                test_chunk.export(temp_file.name, format="mp3")
-                temp_size = self.get_audio_file_size(temp_file.name)
-                
-            # Remove test file
-            os.unlink(temp_file.name)
-            
-            # If size is under the limit, break
-            if temp_size < self.MAX_FILE_SIZE:
-                break
-                
-            # Otherwise, reduce chunk size by 20%
-            chunk_size_ms = int(chunk_size_ms * 0.8)
-            
-            # Safety check to avoid infinite loop
-            if chunk_size_ms < 30000:  # 30 seconds minimum
-                raise ValueError("Cannot chunk file to less than 25MB in 30 second segments")
-        
-        logger.info(f"Using chunk size of {chunk_size_ms/1000:.1f} seconds")
-        
-        # Create chunks with overlap
-        chunk_files = []
-        start_ms = 0
-        
-        while start_ms < total_duration:
-            # Calculate end of chunk
-            end_ms = min(start_ms + chunk_size_ms, total_duration)
-            
-            # Extract chunk from audio
-            chunk = audio[start_ms:end_ms]
-            
-            # Export chunk to file
-            chunk_path = os.path.join(temp_dir, f"chunk_{len(chunk_files)}.mp3")
-            chunk.export(chunk_path, format="mp3")
-            
-            chunk_files.append(chunk_path)
-            
-            # Move to next start point, adjusted for overlap
-            start_ms = end_ms - self.OVERLAP_DURATION
-            
-            # Make sure we don't go backwards (could happen if OVERLAP_DURATION > chunk_size_ms)
-            start_ms = max(start_ms, end_ms - self.OVERLAP_DURATION)
-            
-            # Break if we've processed the entire audio
-            if end_ms >= total_duration:
-                break
-                
-        logger.info(f"Created {len(chunk_files)} chunks from {Path(file_path).name}")
-        return chunk_files
+        return self.chunking_strategy.chunk_audio(audio, temp_dir)
     
     def merge_transcriptions(self, transcriptions: List[Transcription]) -> TranscriptionResult:
         """
@@ -518,7 +466,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     try:
-        processor = AudioProcessor()
+        processor = AudioProcessor(
+            chunking_strategy=TimedChunkStrategy(chunk_duration_ms=60000)
+        )
         
         result = processor.process_audio(
             file_path=args.file,
@@ -548,4 +498,4 @@ if __name__ == "__main__":
             
     except Exception as e:
         print(f"Error: {e}")
-        
+
