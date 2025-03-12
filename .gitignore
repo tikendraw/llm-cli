@@ -4,6 +4,10 @@
 ape1.jpg
 tamm4.jpg
 *.jpg
+audio.mp3
+audio.flac
+whisper_coc.txt
+*.mp3
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -168,3 +172,4 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 content.txt
+test_function.ipynb
