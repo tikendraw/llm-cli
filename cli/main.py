@@ -1,4 +1,5 @@
 import re
+import signal
 import warnings
 
 import click
@@ -8,6 +9,12 @@ from cli.lazy_imports import get_config
 
 warnings.simplefilter("ignore", UserWarning)
 console = Console()
+
+def signal_handler(sig, frame):
+    if click.confirm('\nDo you really want to exit?'):
+        console.print("[cyan]Goodbye![/cyan]")
+        exit(0)
+    return
 
 def get_version():
     try:
@@ -137,6 +144,9 @@ def chatui(
     title,
 ):
     """Interactive chat interface with Markdown, RAG, and image support."""
+    # Register the signal handler for Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+    
     from cli.db_utils import get_chat_history, init_db, save_chat_history
     from cli.utils import (
         filter_command,
@@ -342,6 +352,143 @@ def config(key: str, value: str):
     setattr(current_config, key, value)
     save_config(current_config)
     click.secho(f"Configuration updated: {key} = {value}", fg="green")
+
+
+@cli.command()
+@click.argument("task", type=str, required=False)
+@click.option("--file", "-f", type=str, help="Read task from file")
+@click.option(
+    "--model",
+    "-m",
+    default=None,
+    help="Model name, e.g., provider/model_name.",
+)
+def agent(task, file, model):
+    """Agent-based task execution. Accept input from arguments, pipe, or file."""
+    try:
+        from core.agents.sml_agents import get_agent
+    except ImportError:
+        console.print(
+            "[red]Agent support is not installed. Install it with: pip install 'llm-cli[agents]'[/red]"
+        )
+        return
+    from cli.utils import get_message_or_stdin
+
+    config = get_config()
+    model = model or config.model
+
+    task_input = get_message_or_stdin(task, file)
+    if not task_input:
+        console.print(
+            "[red]No task provided. Provide a task, pipe input, or specify a file.[/red]"
+        )
+        return
+
+    try:
+        manager_agent = get_agent(model)
+        result = manager_agent.run(task_input)
+        click.secho(result, fg="green")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+@cli.command()
+@click.argument("audio_file", type=click.Path(exists=True))
+@click.option("--mode", "-m", 
+              type=click.Choice(['transcribe', 'translate']), 
+              default='transcribe',
+              help="Mode: transcribe or translate to English")
+@click.option("--output", "-o", type=str, help="Output file path for result")
+@click.option("--model", 
+              type=click.Choice(['whisper-large-v3', 'whisper-large-v3-turbo', 'distil-whisper-large-v3-en']), 
+              default='whisper-large-v3',
+              help="Whisper model to use")
+@click.option("--language", "-l", default='en', 
+              help="Language code for transcription (e.g., en, fr). Only used in transcribe mode")
+@click.option("--prompt", "-p", default=None, 
+              help="Optional prompt to guide transcription/translation")
+@click.option("--preprocess", is_flag=True, 
+              help="Preprocess audio to 16KHz mono FLAC before processing")
+@click.option("--response-format", "-f",
+              type=click.Choice(['text', 'json', 'verbose_json']),
+              default='verbose_json',
+              help="Response format: text, json, or verbose_json (with timestamps)")
+def audio(
+    audio_file, mode, output, model, language, prompt, preprocess, response_format
+):
+    """Transcribe or translate audio files using Whisper models via Groq API."""
+    try:
+        from core.audio import AudioProcessor
+    except ImportError as e:
+        console.print("[red]Audio support not installed. Install required packages.[/red]")
+        console.print(e)
+        return
+
+    try:
+        processor = AudioProcessor()
+        
+        result = processor.process_audio(
+            file_path=audio_file,
+            mode=mode,
+            model=model,
+            language=language,
+            prompt=prompt,
+            preprocess=preprocess,
+            response_format=response_format
+        )
+
+        if output:
+            with open(output, 'w', encoding='utf-8') as f:
+                if isinstance(result, (str, dict)):
+                    if isinstance(result, dict):
+                        import json
+                        json.dump(result, f, ensure_ascii=False, indent=2)
+                    else:
+                        f.write(result)
+                else:
+                    # For verbose_json, save both full text and segments
+                    import json
+                    json.dump({
+                        "text": result.text,
+                        "segments": [
+                            {
+                                "start": s.start,
+                                "end": s.end,
+                                "text": s.text
+                            } for s in result.segments
+                        ],
+                        "language": result.language
+                    }, f, ensure_ascii=False, indent=2)
+            console.print(f"[green]{mode.title()}d text saved to: {output}[/green]")
+        else:
+            if isinstance(result, str):
+                console.print(f"[green]{mode.title()}d text:[/green]")
+                console.print(result)
+            elif isinstance(result, dict):
+                console.print(f"[green]{mode.title()}d result:[/green]")
+                import json
+                console.print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                # For verbose_json, display a more structured output
+                console.print(f"[green]{mode.title()}d full text:[/green]")
+                console.print(result.text)
+                console.print("\n[green]Segmented transcription:[/green]")
+                
+                # Calculate maximum timestamp width for alignment
+                max_time_width = max(
+                    len(f"{s.start:.2f}-{s.end:.2f}") 
+                    for s in result.segments
+                )
+                
+                # Display each segment with aligned timestamps
+                for segment in result.segments:
+                    timestamp = f"{segment.start:.2f}-{segment.end:.2f}"
+                    console.print(
+                        f"[yellow]{timestamp:<{max_time_width}}[/yellow] | {segment.text}"
+                    )
+
+    except Exception as e:
+        console.print(f"[red]Error processing audio: {e}[/red]")
 
 
 if __name__ == "__main__":
