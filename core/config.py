@@ -14,13 +14,14 @@ history_db = config_dir/'chat_history.db'
 
 @dataclass
 class ChatConfig:
-    model:str = 'gemini/gemini-1.5-flash'
+    model:str = 'gemini/gemini-3-flash-preview'
     temperature:float = 0.2
     max_token_output:int = 8192
     
 
 def save_config(config:ChatConfig=None, config_file:Path=config_file)->None:
-    
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+
     if config is None:
         config = ChatConfig()
         
@@ -36,4 +37,7 @@ def load_config() -> ChatConfig:
         with open(config_file, 'r') as f:
             config_data = json.load(f)
         return ChatConfig(**config_data)
-    return ChatConfig()  
+
+    default_config = ChatConfig()
+    save_config(default_config)
+    return default_config

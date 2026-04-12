@@ -6,7 +6,7 @@ authors = ["tikendraw <tikendraksahu1029@gmail.com>"]
 readme = "README.md"
 
 packages = [
-    { include = "cli" },
+    { include = "llm_cli" },
     { include = "core" },
 ]
 
@@ -22,10 +22,11 @@ agents = ["smolagents"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
+mkdocs = "^1.6.1"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-llm-cli = 'cli.main:cli'
+llm-cli = 'llm_cli.main:cli'

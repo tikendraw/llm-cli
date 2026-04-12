@@ -1,6 +1,8 @@
 # LLM-cli
 A lightweight Command Line Interface (CLI) for interacting with Large Language Models (LLMs) using LiteLLM.
 
+See [IMPLEMENTED_FEATURES.md](./IMPLEMENTED_FEATURES.md) for the current feature guide based on the code that is actually implemented in this repository.
+
 
 ## 💡 Why This Project?
 Sometimes network constraints or data limitations make it difficult to access large language models via web interfaces. This CLI provides a lightweight, flexible solution for LLM interactions directly from the terminal.
@@ -96,6 +98,3 @@ pip install .
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 🖹 License
-The MIT one.
