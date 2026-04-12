@@ -79,7 +79,6 @@ def chat(
     config = get_config()
     model = model or config.model
     temperature = temperature if temperature is not None else config.temperature
-    print(model)
     message = get_message_or_stdin(message, file)
     if not message:
         console.print(

@@ -5,19 +5,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple
 
-import litellm
-from litellm import completion
-
 from .config import config_dir
 
 
+# Avoid LiteLLM's remote cost map fetch during CLI startup unless the user
+# explicitly opted into the remote map via their environment.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+
+def _get_litellm():
+    import litellm
+
+    return litellm
+
+
+def _get_completion():
+    from litellm import completion
+
+    return completion
+
+
 def chat(*args, **kwargs):
-    return completion(*args, **kwargs)
+    return _get_completion()(*args, **kwargs)
 
 
 def stream_chat(*args, **kwargs):
     kwargs["stream"] = True
-    return completion(*args, **kwargs)
+    return _get_completion()(*args, **kwargs)
 
 
 def _extract_content_text(content: Any) -> str:
@@ -102,7 +116,7 @@ def collect_stream_response(
     return "".join(chunks)
 
 def is_vision_llm(model:str)->bool:
-    return litellm.supports_vision(model)
+    return _get_litellm().supports_vision(model)
 
 def encode_image(image_path: str |Path) -> str:
     if isinstance(image_path, str):

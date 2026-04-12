@@ -173,3 +173,4 @@ cython_debug/
 #.idea/
 content.txt
 test_function.ipynb
+poetry.lock
