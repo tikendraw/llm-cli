@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -118,3 +119,40 @@ def get_input_from_file(file_path: str) -> Optional[str]:
             return f.read().strip()
     except Exception as e:
         raise click.UsageError(f"Failed to read file: {e}")
+
+
+def _title_source_text(message: Any) -> str:
+    if isinstance(message, str):
+        return message
+
+    if isinstance(message, list):
+        parts = []
+        for item in message:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return " ".join(parts).strip()
+
+    if isinstance(message, dict):
+        content = message.get("content")
+        if content is not None:
+            return _title_source_text(content)
+
+    return ""
+
+
+def make_session_title(message: Any, max_words: int = 10) -> str:
+    """Create a short session title from the first user message."""
+    source_text = _title_source_text(message)
+    if not source_text:
+        return "Untitled Session"
+
+    words = re.findall(r"\S+", source_text.strip())
+    if not words:
+        return "Untitled Session"
+
+    preview = " ".join(words[:max_words])
+    if len(words) > max_words:
+        preview += "..."
+    return preview

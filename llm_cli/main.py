@@ -71,9 +71,11 @@ def chat(
     """CLI-based chat interaction. Accept input from arguments, pipe, or file."""
     from core.chat import collect_stream_response, stream_chat
     from core.prompt import get_formatter, get_prompt
+    from llm_cli.db_utils import init_db, save_chat_history
     from llm_cli.utils import (
         get_context_from_file,
         get_message_or_stdin,
+        make_session_title,
         prepare_messages,
     )
     config = get_config()
@@ -104,9 +106,12 @@ def chat(
         response_stream = stream_chat(
             model=model, messages=messages, temperature=temperature
         )
-        collect_stream_response(
+        assistant_message = collect_stream_response(
             response_stream, on_chunk=lambda text: click.secho(text, fg="green", nl=False)
         )
+        messages.append({"role": "assistant", "content": assistant_message})
+        init_db()
+        save_chat_history(messages, title=make_session_title(message))
         click.echo()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -157,6 +162,7 @@ def chatui(
         filter_command,
         get_context_from_file,
         handle_image_command,
+        make_session_title,
         reset_conversation,
         show_messages,
     )
@@ -269,6 +275,12 @@ def chatui(
             except Exception as e:
                 console.print(f"[red]Error generating response: {e}[/red]")
     finally:
+        if title == "Untitled Session":
+            first_user_message = next(
+                (message.get("content") for message in messages if message.get("role") == "user"),
+                None,
+            )
+            title = make_session_title(first_user_message)
         session_id = save_chat_history(messages, session_id=session_id, title=title)
         console.print(f"[cyan]Session saved with ID {session_id} Goodbye![/cyan]")
 
