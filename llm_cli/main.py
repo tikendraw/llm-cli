@@ -69,18 +69,17 @@ def chat(
     skip_vision_check,
 ):
     """CLI-based chat interaction. Accept input from arguments, pipe, or file."""
+    from core.chat import collect_stream_response, stream_chat
+    from core.prompt import get_formatter, get_prompt
     from llm_cli.utils import (
         get_context_from_file,
         get_message_or_stdin,
         prepare_messages,
     )
-    from core.chat import chat as cc
-    from core.prompt import get_formatter, get_prompt
-
     config = get_config()
     model = model or config.model
     temperature = temperature if temperature is not None else config.temperature
-
+    print(model)
     message = get_message_or_stdin(message, file)
     if not message:
         console.print(
@@ -103,8 +102,13 @@ def chat(
             no_system_prompt,
             skip_vision_check,
         )
-        response = cc(model=model, messages=messages, temperature=temperature)
-        click.secho(response.choices[0].message["content"], fg="green")
+        response_stream = stream_chat(
+            model=model, messages=messages, temperature=temperature
+        )
+        collect_stream_response(
+            response_stream, on_chunk=lambda text: click.secho(text, fg="green", nl=False)
+        )
+        click.echo()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -147,6 +151,8 @@ def chatui(
     # Register the signal handler for Ctrl+C
     signal.signal(signal.SIGINT, signal_handler)
     
+    from core.chat import collect_stream_response, parse_image, stream_chat
+    from core.prompt import get_formatter, get_prompt
     from llm_cli.db_utils import get_chat_history, init_db, save_chat_history
     from llm_cli.utils import (
         filter_command,
@@ -155,9 +161,6 @@ def chatui(
         reset_conversation,
         show_messages,
     )
-    from core.chat import chat as cc
-    from core.chat import parse_image
-    from core.prompt import get_formatter, get_prompt
 
     config = get_config()
     model = model or config.model
@@ -218,7 +221,7 @@ def chatui(
                     continue
                 case "/help":
                     console.print(
-                        "[yellow]Commands: /exit, /quit, /clear, /help, /image <path>.[/yellow]"
+                        "[yellow]Commands: /exit, /quit, /clear, /clear_context, /help, /image <path>.[/yellow]"
                     )
                     continue
                 case "/image":
@@ -252,12 +255,18 @@ def chatui(
 
             # Send messages to LLM and handle the response
             try:
-                response = cc(model=model, messages=messages, temperature=temperature)
-                assistant_message = response.choices[0].message["content"]
-                messages.append({"role": "assistant", "content": assistant_message})
-                show_messages(
-                    [{"role": "assistant", "content": assistant_message}], console
+                console.print("[green]LLM 🤖:[/green]")
+                response_stream = stream_chat(
+                    model=model, messages=messages, temperature=temperature
                 )
+                assistant_message = collect_stream_response(
+                    response_stream,
+                    on_chunk=lambda text: console.print(
+                        text, style="green", end="", markup=False, highlight=False
+                    ),
+                )
+                console.print()
+                messages.append({"role": "assistant", "content": assistant_message})
             except Exception as e:
                 console.print(f"[red]Error generating response: {e}[/red]")
     finally:

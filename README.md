@@ -59,6 +59,14 @@ pip install .
   ```bash
   llm-chat chat < some_file_with_question.txt
   ```
+* Include the last terminal command/output blocks from the current tmux pane
+  ```bash
+  llm-cli chat --pane-history 1 "Why did this command fail?"
+  ```
+* Target a different tmux pane explicitly
+  ```bash
+  llm-cli chat --pane-history 3 --pane-target %12 "Summarize what just happened"
+  ```
 
 ### Interactive Chat UI
 
@@ -66,6 +74,15 @@ pip install .
 
   ```bash
   llm-cli chatui
+  ```
+* Start with recent tmux pane history as context:
+  ```bash
+  llm-cli chatui --pane-history 2
+  ```
+* During chat, add pane history on demand:
+  ```text
+  /pane 3
+  /pane 2 %12
   ```
 
 ### Image Support

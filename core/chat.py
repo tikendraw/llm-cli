@@ -3,7 +3,7 @@ import os
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 import litellm
 from litellm import completion
@@ -13,6 +13,93 @@ from .config import config_dir
 
 def chat(*args, **kwargs):
     return completion(*args, **kwargs)
+
+
+def stream_chat(*args, **kwargs):
+    kwargs["stream"] = True
+    return completion(*args, **kwargs)
+
+
+def _extract_content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+
+            if not isinstance(item, dict):
+                continue
+
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+                continue
+
+            text_value = item.get("text", {}).get("value") if isinstance(item.get("text"), dict) else None
+            if isinstance(text_value, str):
+                parts.append(text_value)
+
+        return "".join(parts)
+
+    if isinstance(content, dict):
+        text = content.get("content")
+        if text is not None:
+            return _extract_content_text(text)
+
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+
+    return ""
+
+
+def extract_chunk_text(chunk: Any) -> str:
+    choices = getattr(chunk, "choices", None)
+    if choices is None and isinstance(chunk, dict):
+        choices = chunk.get("choices")
+    if not choices:
+        return ""
+
+    choice = choices[0]
+    delta = getattr(choice, "delta", None)
+    if delta is None and isinstance(choice, dict):
+        delta = choice.get("delta")
+    if delta is not None:
+        content = getattr(delta, "content", None)
+        if content is None and isinstance(delta, dict):
+            content = delta.get("content")
+        return _extract_content_text(content)
+
+    message = getattr(choice, "message", None)
+    if message is None and isinstance(choice, dict):
+        message = choice.get("message")
+    if message is None:
+        return ""
+
+    content = getattr(message, "content", None)
+    if content is None and isinstance(message, dict):
+        content = message.get("content")
+    return _extract_content_text(content)
+
+
+def collect_stream_response(
+    response_stream: Iterable[Any], on_chunk: Callable[[str], None] | None = None
+) -> str:
+    chunks: list[str] = []
+
+    for chunk in response_stream:
+        text = extract_chunk_text(chunk)
+        if not text:
+            continue
+        chunks.append(text)
+        if on_chunk is not None:
+            on_chunk(text)
+
+    return "".join(chunks)
 
 def is_vision_llm(model:str)->bool:
     return litellm.supports_vision(model)

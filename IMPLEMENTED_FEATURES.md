@@ -128,6 +128,24 @@ llm-cli chat -c notes.txt "Summarize the important points"
 
 If the value passed to `--context` is a real file path, the file contents are loaded and used as context.
 
+### tmux pane history as context
+
+If you run `llm-cli` inside tmux, you can add recent pane history directly to the prompt context.
+
+Capture the last command and its output from the current pane:
+
+```bash
+llm-cli chat --pane-history 1 "Why did this fail?"
+```
+
+Capture the last three command/output blocks from another pane:
+
+```bash
+llm-cli chat --pane-history 3 --pane-target %12 "Summarize the errors"
+```
+
+This is tmux-based. Outside tmux, pane capture is not available.
+
 ### Image input
 
 You can attach an image for vision-capable models:
@@ -194,6 +212,16 @@ Supported interactive commands:
 - `/clear`
 - `/clear_context`
 - `/image <path>`
+- `/pane <n> [pane_target]`
+
+Example:
+
+```text
+/pane 2
+/pane 3 %12
+```
+
+This appends the selected tmux pane history to the active chat context so the next prompt can refer to recent commands and errors.
 
 ### What `chatui` saves
 
