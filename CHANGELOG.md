@@ -2,6 +2,10 @@
 
 All notable user-facing changes to `llm-cli` are documented here.
 
+## 2026-04-14
+- Moved from poetry to UV for packaging and distribution, simplifying the project structure and improving build times.
+- Updated dependencies, including a major version bump for `litellm` to 1.83.7, which includes important bug fixes and performance improvements.
+
 ## 2026-04-12
 
 ### Added
